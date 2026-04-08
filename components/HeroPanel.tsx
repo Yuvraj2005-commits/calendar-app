@@ -8,18 +8,41 @@ type Props = {
 
 // 12 distinct monthly images — nature/landscape themed
 const MONTHLY_IMAGES = [
-  "https://images.unsplash.com/photo-1418985991508-e47386d96a71?w=800&q=80", // Jan - snowy mountains
-  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&q=80", // Feb - frozen lake
-  "https://images.unsplash.com/photo-1490750967868-88df5691166e?w=800&q=80", // Mar - spring blossoms
-  "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=800&q=80", // Apr - tulips
-  "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80", // May - green hills
-  "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80", // Jun - alpine
-  "https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=800&q=80", // Jul - summer lake
-  "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80", // Aug - beach
-  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&q=80", // Sep - autumn
-  "https://images.unsplash.com/photo-1476231682828-37e571bc172f?w=800&q=80", // Oct - fall forest
-  "https://images.unsplash.com/photo-1517299321609-52687d1bc55a?w=800&q=80", // Nov - misty
-  "https://images.unsplash.com/photo-1418985991508-e47386d96a71?w=800&q=80", // Dec - winter
+  // JAN — Winter / Snow
+  "https://images.unsplash.com/photo-1483664852095-d6cc6870702d?w=1200&q=80",
+
+  // FEB — Love / Soft aesthetic
+  "https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=1200&q=80",
+
+  // MAR — Spring / Blossoms
+ " https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80",
+
+  // APR — Fresh flowers / Tulips
+  "https://images.unsplash.com/photo-1468327768560-75b778cbb551?w=1200&q=80",
+
+  // MAY — Green fields / Growth
+  "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1200&q=80",
+
+  // JUN — Mountains / Adventure
+  "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200&q=80",
+
+  // JUL — Lake / Travel vibe
+  "https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=1200&q=80",
+
+  // AUG — Beach / Summer
+  "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80",
+
+  // SEP — Autumn start
+  "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200&q=80",
+
+  // OCT — Fall leaves
+  "https://images.unsplash.com/photo-1476231682828-37e571bc172f?w=1200&q=80",
+
+  // NOV — Fog / Calm / Minimal
+  "https://images.unsplash.com/photo-1511131341194-24e2eeeebb09?w=1200&q=80",
+
+  // DEC — Snow / Christmas vibe
+  "https://images.unsplash.com/photo-1483664852095-d6cc6870702d?w=1200&q=80",
 ];
 
 export default function HeroPanel({ currentDate }: Props) {

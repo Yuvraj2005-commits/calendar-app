@@ -2,7 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DateRange, SavedNote } from "./types";
-import { isSameDay, isBeforeDay, isBetween, isToday, toDateKey } from "./utils";
+import {
+  isSameDay,
+  isBeforeDay,
+  isBetween,
+  isToday,
+  toDateKey,
+} from "./utils";
+
+/* Holiday type */
+type Holiday = {
+  name: string;
+  date: { iso: string };
+};
 
 type Props = {
   range: DateRange;
@@ -10,6 +22,7 @@ type Props = {
   currentDate: Date;
   setCurrentDate: React.Dispatch<React.SetStateAction<Date>>;
   notes: SavedNote[];
+  holidays?: Holiday[]; //  optional
 };
 
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -20,17 +33,18 @@ export default function CalendarGrid({
   currentDate,
   setCurrentDate,
   notes,
+  holidays = [], // ✅ default fix (NO CRASH)
 }: Props) {
   const [hoverDate, setHoverDate] = useState<Date | null>(null);
-  const [flipping, setFlipping] = useState(false);
   const [tooltip, setTooltip] = useState<{
     visible: boolean;
     text: string;
+    holiday?: string;
     label: string;
-    dayIdx: number;
-  }>({ visible: false, text: "", label: "", dayIdx: -1 });
+    idx: number;
+  }>({ visible: false, text: "", holiday: "", label: "", idx: -1 });
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -42,54 +56,84 @@ export default function CalendarGrid({
     ...Array(firstDay).fill(null),
     ...Array.from({ length: totalDays }, (_, i) => i + 1),
   ];
-  const remainder = daysArray.length % 7;
-  if (remainder !== 0) daysArray.push(...Array(7 - remainder).fill(null));
 
-  // Build note map keyed by dateKey
-  const dayNoteMap = useRef<Map<string, string>>(new Map());
+  const remainder = daysArray.length % 7;
+  if (remainder !== 0) {
+    daysArray.push(...Array(7 - remainder).fill(null));
+  }
+
+  /* ---------------- Notes Map ---------------- */
+  const noteMap = useRef<Map<string, string>>(new Map());
+
   useEffect(() => {
     const map = new Map<string, string>();
     notes.forEach((n) => map.set(n.dateKey, n.text));
-    dayNoteMap.current = map;
+    noteMap.current = map;
   }, [notes]);
 
-  const handleMouseEnter = useCallback(
-    (day: number, idx: number, e: React.MouseEvent<HTMLDivElement>) => {
+  /* ---------------- Holiday Finder ---------------- */
+  const getHoliday = (date: Date): Holiday | null => {
+    if (!holidays.length) return null;
+
+    return (
+      holidays.find((h) => {
+        const d = new Date(h.date.iso);
+        return (
+          d.getDate() === date.getDate() &&
+          d.getMonth() === date.getMonth() &&
+          d.getFullYear() === date.getFullYear()
+        );
+      }) || null
+    );
+  };
+
+  /* ---------------- Hover ---------------- */
+  const handleEnter = useCallback(
+    (day: number, idx: number) => {
       const date = new Date(year, month, day);
       setHoverDate(date);
 
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      const key = toDateKey(date);
-      const noteText = dayNoteMap.current.get(key);
-      if (noteText) {
+
+      const note = noteMap.current.get(toDateKey(date));
+      const holiday = getHoliday(date);
+
+      if (note || holiday) {
         debounceRef.current = setTimeout(() => {
           setTooltip({
             visible: true,
-            text: noteText,
-            label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-            dayIdx: idx,
+            text: note || "",
+            holiday: holiday?.name || "",
+            label: date.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+            }),
+            idx,
           });
-        }, 320);
+        }, 200);
       }
     },
-    [year, month]
+    [year, month, holidays]
   );
 
-  const handleMouseLeave = useCallback(() => {
+  const handleLeave = () => {
     setHoverDate(null);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setTooltip((t) => ({ ...t, visible: false }));
-  }, []);
+  };
 
+  /* ---------------- Click Range ---------------- */
   const handleClick = (day: number) => {
     const clicked = new Date(year, month, day);
-    if (!range.start || (range.start && range.end)) {
+
+    if (!range.start || range.end) {
       setRange({ start: clicked, end: null });
     } else {
       if (isSameDay(clicked, range.start)) {
         setRange({ start: null, end: null });
         return;
       }
+
       if (isBeforeDay(clicked, range.start)) {
         setRange({ start: clicked, end: range.start });
       } else {
@@ -98,308 +142,117 @@ export default function CalendarGrid({
     }
   };
 
-  const changeMonth = (dir: 1 | -1) => {
-    if (flipping) return;
-    setFlipping(true);
-    setTimeout(() => {
-      setCurrentDate(new Date(year, month + dir, 1));
-      setFlipping(false);
-      setRange({ start: null, end: null });
-    }, 200);
+  /* ---------------- Change Month ---------------- */
+  const changeMonth = (dir: number) => {
+    setCurrentDate(new Date(year, month + dir, 1));
+    setRange({ start: null, end: null });
   };
 
+  /* ---------------- Day State ---------------- */
   const getDayState = (day: number) => {
     const date = new Date(year, month, day);
-    const effectiveEnd =
+
+    const end =
       range.start && !range.end && hoverDate ? hoverDate : range.end;
 
     let start = range.start;
-    let end = effectiveEnd;
+    let finish = end;
 
-    if (start && end && isBeforeDay(end, start)) {
-      [start, end] = [end, start];
+    if (start && finish && isBeforeDay(finish, start)) {
+      [start, finish] = [finish, start];
     }
 
-    const isStart = start ? isSameDay(date, start) : false;
-    const isEnd = end ? isSameDay(date, end) : false;
-    const inRange = start && end ? isBetween(date, start, end) : false;
-    const isPreview =
-      !range.end && range.start && hoverDate
-        ? isBetween(
-            date,
-            ...([range.start, hoverDate].sort(
-              (a, b) => a.getTime() - b.getTime()
-            ) as [Date, Date])
-          )
-        : false;
-    const today = isToday(date);
-    const hasNote = dayNoteMap.current.has(toDateKey(date));
-    const isSunday = date.getDay() === 0;
-    const isSaturday = date.getDay() === 6;
-
-    return { isStart, isEnd, inRange, isPreview, today, hasNote, isSunday, isSaturday };
+    return {
+      isStart: start && isSameDay(date, start),
+      isEnd: finish && isSameDay(date, finish),
+      inRange: start && finish && isBetween(date, start, finish),
+      today: isToday(date),
+      hasNote: noteMap.current.has(toDateKey(date)),
+      holiday: getHoliday(date),
+    };
   };
 
-  const monthName = currentDate.toLocaleString("default", { month: "long" });
+  const monthName = currentDate.toLocaleString("default", {
+    month: "long",
+  });
 
   return (
-    <div style={{ fontFamily: "sans-serif" }}>
-      {/* Month navigation */}
-      <div style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: "14px",
-      }}>
-        <button
-          onClick={() => changeMonth(-1)}
-          style={{
-            width: "30px",
-            height: "30px",
-            borderRadius: "50%",
-            border: "1.5px solid #d0c8bc",
-            background: "#f5f2ee",
-            color: "#6b6358",
-            cursor: "pointer",
-            fontSize: "14px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            transition: "all 0.15s",
-          }}
-          onMouseOver={(e) => (e.currentTarget.style.background = "#e8e4dc")}
-          onMouseOut={(e) => (e.currentTarget.style.background = "#f5f2ee")}
-        >
-          ‹
-        </button>
-
-        <span style={{
-          fontSize: "13px",
-          fontWeight: 600,
-          color: "#3a3530",
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-        }}>
+    <div>
+      {/* Header */}
+      <div className="flex justify-between items-center mb-3">
+        <button onClick={() => changeMonth(-1)}>‹</button>
+        <h2 className="text-sm font-semibold">
           {monthName} {year}
-        </span>
-
-        <button
-          onClick={() => changeMonth(1)}
-          style={{
-            width: "30px",
-            height: "30px",
-            borderRadius: "50%",
-            border: "1.5px solid #d0c8bc",
-            background: "#f5f2ee",
-            color: "#6b6358",
-            cursor: "pointer",
-            fontSize: "14px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            transition: "all 0.15s",
-          }}
-          onMouseOver={(e) => (e.currentTarget.style.background = "#e8e4dc")}
-          onMouseOut={(e) => (e.currentTarget.style.background = "#f5f2ee")}
-        >
-          ›
-        </button>
+        </h2>
+        <button onClick={() => changeMonth(1)}>›</button>
       </div>
 
-      {/* Weekday headers */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(7, 1fr)",
-        marginBottom: "6px",
-      }}>
-        {WEEKDAYS.map((d, i) => (
-          <div key={d} style={{
-            textAlign: "center",
-            fontSize: "10px",
-            fontWeight: 700,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: i === 0 || i === 6 ? "#2563a8" : "#9a9080",
-            padding: "4px 0",
-          }}>
+      {/* Weekdays */}
+      <div className="grid grid-cols-7 text-xs text-gray-500 mb-2">
+        {WEEKDAYS.map((d) => (
+          <div key={d} className="text-center">
             {d}
           </div>
         ))}
       </div>
 
-      {/* Days grid */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(7, 1fr)",
-        gap: "3px",
-        position: "relative",
-        opacity: flipping ? 0.4 : 1,
-        transition: "opacity 0.2s",
-      }}>
+      {/* Grid */}
+      <div className="grid grid-cols-7 gap-2">
         {daysArray.map((day, idx) => {
-          if (!day) return <div key={idx} />;
+          if (!day) return <div key={idx}></div>;
 
-          const { isStart, isEnd, inRange, isPreview, today, hasNote, isSunday, isSaturday } =
+          const { isStart, isEnd, inRange, today, hasNote, holiday } =
             getDayState(day);
-
-          const isEndpoint = isStart || isEnd;
-          const isWeekend = isSunday || isSaturday;
-
-          // Background color logic
-          let bg = "transparent";
-          let textColor = isWeekend ? "#2563a8" : "#3a3530";
-          let fontWeight = "400";
-          let borderRadius = "6px";
-          let border = "none";
-          let boxShadow = "none";
-
-          if (isEndpoint) {
-            bg = "#2563a8";
-            textColor = "#fff";
-            fontWeight = "700";
-            boxShadow = "0 2px 8px rgba(37,99,168,0.4)";
-          } else if (inRange) {
-            bg = "rgba(37,99,168,0.12)";
-            textColor = "#1a4a8a";
-            fontWeight = "500";
-            // Flatten corners to show as continuous band
-            borderRadius = "0";
-          } else if (isPreview) {
-            bg = "rgba(37,99,168,0.07)";
-            textColor = "#2563a8";
-            borderRadius = "0";
-          }
-
-          if (today && !isEndpoint) {
-            border = "1.5px solid #2563a8";
-          }
 
           return (
             <div
               key={idx}
               onClick={() => handleClick(day)}
-              onMouseEnter={(e) => handleMouseEnter(day, idx, e)}
-              onMouseLeave={handleMouseLeave}
-              style={{
-                position: "relative",
-                height: "36px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: bg,
-                color: textColor,
-                fontWeight,
-                fontSize: "12px",
-                borderRadius,
-                border,
-                boxShadow,
-                cursor: "pointer",
-                transition: "all 0.12s",
-                userSelect: "none",
-              }}
-              onMouseOver={(e) => {
-                if (!isEndpoint && !inRange && !isPreview) {
-                  e.currentTarget.style.background = "rgba(37,99,168,0.07)";
-                  e.currentTarget.style.borderRadius = "6px";
+              onMouseEnter={() => handleEnter(day, idx)}
+              onMouseLeave={handleLeave}
+              className={`
+                h-14 flex items-center justify-center rounded-lg
+                cursor-pointer relative transition
+
+                ${
+                  isStart || isEnd
+                    ? "bg-blue-500 text-white"
+                    : inRange
+                    ? "bg-blue-100"
+                    : "bg-white hover:bg-gray-100"
                 }
-              }}
-              onMouseOut={(e) => {
-                if (!isEndpoint && !inRange && !isPreview) {
-                  e.currentTarget.style.background = "transparent";
-                }
-              }}
+
+                ${today ? "border border-blue-400" : ""}
+              `}
             >
               {day}
 
-              {/* Note indicator dot */}
+              {/*  Holiday dot */}
+              {holiday && (
+                <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-red-500 rounded-full" />
+              )}
+
+              {/*  Note dot */}
               {hasNote && (
-                <div style={{
-                  position: "absolute",
-                  bottom: "3px",
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  width: "4px",
-                  height: "4px",
-                  borderRadius: "50%",
-                  background: isEndpoint ? "rgba(255,255,255,0.8)" : "#2563a8",
-                }} />
+                <div className="absolute bottom-1 w-1.5 h-1.5 bg-blue-500 rounded-full" />
               )}
 
               {/* Tooltip */}
-              {tooltip.visible && tooltip.dayIdx === idx && (
-                <div style={{
-                  position: "absolute",
-                  bottom: "calc(100% + 6px)",
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  background: "#2a2420",
-                  color: "#fff",
-                  fontSize: "11px",
-                  padding: "5px 8px",
-                  borderRadius: "6px",
-                  whiteSpace: "nowrap",
-                  maxWidth: "160px",
-                  zIndex: 50,
-                  pointerEvents: "none",
-                  boxShadow: "0 3px 10px rgba(0,0,0,0.25)",
-                }}>
-                  <div style={{ fontWeight: 600, marginBottom: "2px", color: "#93c5fd" }}>
-                    {tooltip.label}
-                  </div>
-                  <div style={{ opacity: 0.85, overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {tooltip.text.length > 50 ? tooltip.text.slice(0, 50) + "…" : tooltip.text}
-                  </div>
+              {tooltip.visible && tooltip.idx === idx && (
+                <div className="absolute bottom-full mb-1 bg-black text-white text-xs px-2 py-1 rounded shadow z-50">
+                  <div className="font-semibold">{tooltip.label}</div>
+
+                  {tooltip.holiday && (
+                    <div className="text-red-400">{tooltip.holiday}</div>
+                  )}
+
+                  {tooltip.text && <div>{tooltip.text}</div>}
                 </div>
               )}
             </div>
           );
         })}
       </div>
-
-      {/* Range hint */}
-      {range.start && !range.end && (
-        <p style={{
-          marginTop: "10px",
-          fontSize: "11px",
-          color: "#9a9080",
-          textAlign: "center",
-          fontStyle: "italic",
-        }}>
-          Click another day to complete the range
-        </p>
-      )}
-
-      {range.start && range.end && (
-        <div style={{
-          marginTop: "10px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}>
-          <p style={{
-            fontSize: "11px",
-            color: "#2563a8",
-            fontWeight: 500,
-          }}>
-            {range.start.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-            {" → "}
-            {range.end.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-          </p>
-          <button
-            onClick={() => setRange({ start: null, end: null })}
-            style={{
-              fontSize: "10px",
-              color: "#9a9080",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              textDecoration: "underline",
-            }}
-          >
-            clear
-          </button>
-        </div>
-      )}
     </div>
   );
 }
